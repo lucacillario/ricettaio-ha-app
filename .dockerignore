@@ -1,0 +1,9 @@
+.git
+.venv
+ricettaio/backend/.venv
+**/__pycache__
+**/.pytest_cache
+ricettaio/frontend/node_modules
+ricettaio/frontend/dist
+data
+*.db*

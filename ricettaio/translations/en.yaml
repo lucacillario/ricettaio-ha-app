@@ -1,0 +1,16 @@
+configuration:
+  gemini_api_key:
+    name: Gemini API key
+    description: Dedicated Gemini Developer API key; it is never exposed to the frontend.
+  gemini_model:
+    name: Gemini model
+    description: Identifier of a supported stable Flash model.
+  ai_enabled:
+    name: Enable AI
+    description: Enables chat and assisted creation when key and model are configured.
+  strict_ingress:
+    name: Restrict to Ingress
+    description: Only accepts traffic from the Home Assistant Ingress gateway.
+  trash_retention_days:
+    name: Trash retention days
+    description: Days before deleted recipes are purged automatically.

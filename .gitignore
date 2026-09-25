@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.db
+*.db-shm
+*.db-wal
+
+# Frontend
+ricettaio/frontend/node_modules/
+ricettaio/frontend/dist/
+ricettaio/frontend/coverage/
+
+# Runtime data and secrets
+data/
+ricettaio/data/
+*.log
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.DS_Store
+.agents/
+.codex/
+.idea/
+.vscode/

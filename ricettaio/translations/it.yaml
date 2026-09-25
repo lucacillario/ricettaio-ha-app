@@ -1,0 +1,16 @@
+configuration:
+  gemini_api_key:
+    name: Chiave API Gemini
+    description: Chiave dedicata della Gemini Developer API; non viene mostrata al frontend.
+  gemini_model:
+    name: Modello Gemini
+    description: Identificatore di un modello Flash stabile supportato.
+  ai_enabled:
+    name: Abilita AI
+    description: Attiva chat e creazione assistita quando chiave e modello sono configurati.
+  strict_ingress:
+    name: Limita a Ingress
+    description: Accetta traffico solo dal gateway Ingress di Home Assistant.
+  trash_retention_days:
+    name: Giorni nel cestino
+    description: Giorni prima della pulizia automatica delle ricette eliminate.

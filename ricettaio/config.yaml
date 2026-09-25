@@ -1,0 +1,30 @@
+name: RicettAIo
+description: Ricettario personale con assistente AI
+version: "0.1.0"
+slug: ricettaio
+stage: experimental
+init: false
+startup: application
+boot: auto
+arch:
+  - aarch64
+  - amd64
+ingress: true
+ingress_port: 8099
+ingress_stream: true
+panel_icon: mdi:chef-hat
+panel_title: RicettAIo
+panel_admin: false
+backup: cold
+options:
+  gemini_api_key: ""
+  gemini_model: ""
+  ai_enabled: false
+  strict_ingress: true
+  trash_retention_days: 30
+schema:
+  gemini_api_key: password
+  gemini_model: str
+  ai_enabled: bool
+  strict_ingress: bool
+  trash_retention_days: int(1,365)
