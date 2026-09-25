@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3
+
+- Rimosso il profilo AppArmor personalizzato non ancora validato su Supervisor.
+- Ripristinato il profilo di protezione predefinito di Home Assistant per evitare blocchi del bootstrap.
+
 ## 0.1.2
 
 - Consentita l'esecuzione delle utility BusyBox necessarie al bootstrap del container.
