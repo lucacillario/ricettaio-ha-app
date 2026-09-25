@@ -55,6 +55,20 @@ La directory `ricettaio/` è una app Home Assistant completa e costituisce il su
 
 Il file `repository.yaml` nella radice identifica il progetto come repository di app Home Assistant. La directory `ricettaio/` contiene l'app installabile.
 
+### Configurazione
+
+Nella scheda **Configurazione** dell'app inserisci:
+
+```yaml
+gemini_api_key: "LA_TUA_CHIAVE"
+gemini_model: "gemini-3.5-flash"
+ai_enabled: true
+strict_ingress: true
+trash_retention_days: 30
+```
+
+Salva la configurazione e riavvia l'app. La chiave Gemini viene conservata nelle opzioni private dell'app e non deve essere aggiunta ai file del repository.
+
 ### Installazione locale alternativa
 
 1. copia la directory `ricettaio/` nella directory `/addons` dell'host Home Assistant;
