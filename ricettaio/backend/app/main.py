@@ -84,7 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if (
             active_settings.strict_ingress
             and request.client
-            and request.client.host != "172.30.32.2"
+            and request.client.host not in {"172.30.32.2", "127.0.0.1", "::1"}
         ):
             return JSONResponse(status_code=403, content={"detail": "Accesso solo via Ingress"})
         response = await call_next(request)

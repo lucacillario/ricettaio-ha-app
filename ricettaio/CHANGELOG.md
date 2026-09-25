@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Consentiti gli health check locali quando la modalità Ingress rigorosa è attiva.
+
 ## 0.1.3
 
 - Rimosso il profilo AppArmor personalizzato non ancora validato su Supervisor.
