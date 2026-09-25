@@ -3,12 +3,17 @@
 profile ricettaio flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
 
+  capability chown,
+  capability setgid,
+  capability setuid,
+
   network inet stream,
   network inet6 stream,
 
   /run.sh rix,
+  /bin/** ix,
   /usr/local/bin/python3.13 ix,
-  /usr/local/bin/uvicorn ix,
+  /usr/local/bin/uvicorn rix,
   /sbin/su-exec ix,
   /usr/local/lib/python3.13/** mr,
   /app/** r,
