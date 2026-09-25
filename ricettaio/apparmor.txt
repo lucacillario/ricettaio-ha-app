@@ -6,7 +6,7 @@ profile ricettaio flags=(attach_disconnected,mediate_deleted) {
   network inet stream,
   network inet6 stream,
 
-  /run.sh ix,
+  /run.sh rix,
   /usr/local/bin/python3.13 ix,
   /usr/local/bin/uvicorn ix,
   /sbin/su-exec ix,
