@@ -16,17 +16,20 @@ logger = logging.getLogger(__name__)
 
 
 def sanitize_gemini_schema(schema: Any) -> Any:
-    """Recursively sanitize a JSON Schema dictionary for the Gemini SDK.
+    """Recursively sanitize a JSON Schema dictionary for the Gemini SDK and API.
 
-    The Gemini SDK Schema model (google.genai.types.Schema) uses extra='forbid'
-    and rejects JSON Schema keywords not defined in its schema (such as
-    exclusiveMinimum, exclusiveMaximum, $schema, and examples). This function
-    normalizes or removes them so that schema validation in the SDK succeeds,
-    while full domain validation is maintained when parsing the model response.
+    The Gemini SDK Schema model (google.genai.types.Schema) and the Gemini API
+    REST endpoint reject JSON Schema keywords not supported in the Gemini schema
+    specification (such as exclusiveMinimum, exclusiveMaximum, additionalProperties,
+    $schema, and examples). This function normalizes or removes them so that
+    both SDK validation and Gemini API payload validation succeed, while full
+    domain validation is maintained when parsing the model response.
     """
     if isinstance(schema, dict):
         cleaned: dict[str, Any] = {}
         for key, value in schema.items():
+            if key in {"additionalProperties", "additional_properties"}:
+                continue
             if key == "exclusiveMinimum":
                 if (
                     isinstance(value, (int, float))

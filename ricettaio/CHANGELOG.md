@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7
+
+- Rimosso `additionalProperties` dallo schema inviato a Gemini per evitare errori di payload non valido sulle API REST.
+
 ## 0.1.6
 
 - Corretta l'incompatibilità dello schema con l'SDK Gemini per i vincoli numerici (exclusiveMinimum).

@@ -44,6 +44,8 @@ def test_sanitize_gemini_schema_removes_exclusive_bounds() -> None:
     }
 
     sanitized = sanitize_gemini_schema(raw_schema)
+    assert "additionalProperties" not in sanitized
+    assert "additional_properties" not in sanitized
     servings_prop = sanitized["properties"]["servings"]
     assert "exclusiveMinimum" not in servings_prop
     assert servings_prop["minimum"] == 0.0
@@ -59,17 +61,31 @@ def test_sanitize_gemini_schema_removes_exclusive_bounds() -> None:
 
 
 def test_gemini_response_schemas_compatible_with_genai_sdk() -> None:
+    def assert_no_forbidden_keys(node: Any) -> None:
+        if isinstance(node, dict):
+            for key, val in node.items():
+                assert key not in {"additionalProperties", "additional_properties"}
+                assert key not in {"exclusiveMinimum", "exclusiveMaximum"}
+                assert_no_forbidden_keys(val)
+        elif isinstance(node, list):
+            for item in node:
+                assert_no_forbidden_keys(item)
+
     # AiAnswer contains proposed_recipe (RecipeCreate) with base_servings > 0
     ai_schema = gemini_response_schema(AiAnswer)
+    assert_no_forbidden_keys(ai_schema)
     validated_ai = t.t_schema(None, ai_schema)
     assert validated_ai is not None
     assert isinstance(validated_ai, types.Schema)
+    assert validated_ai.additional_properties is None
 
     # RecipeCreate directly
     recipe_schema = gemini_response_schema(RecipeCreate)
+    assert_no_forbidden_keys(recipe_schema)
     validated_recipe = t.t_schema(None, recipe_schema)
     assert validated_recipe is not None
     assert isinstance(validated_recipe, types.Schema)
+    assert validated_recipe.additional_properties is None
 
 
 def test_parse_gemini_response_supports_dict_and_fenced_markdown() -> None:
