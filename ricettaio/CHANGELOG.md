@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.6
+
+- Corretta l'incompatibilità dello schema con l'SDK Gemini per i vincoli numerici (exclusiveMinimum).
+
 ## 0.1.5
 
 - Mostrato nei log e nell'interfaccia il motivo restituito da Gemini, con API key redatta.

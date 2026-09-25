@@ -1,6 +1,6 @@
 name: RicettAIo
 description: Ricettario personale con assistente AI
-version: "0.1.5"
+version: "0.1.6"
 slug: ricettaio
 stage: experimental
 init: false
