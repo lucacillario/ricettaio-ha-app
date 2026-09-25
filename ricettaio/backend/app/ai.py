@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from abc import ABC, abstractmethod
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -13,6 +13,60 @@ from .domain import ChatMessage, ChatResponse, Recipe, RecipeCreate, RecipeSourc
 from .repository import RecipeRepository
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_gemini_schema(schema: Any) -> Any:
+    """Recursively sanitize a JSON Schema dictionary for the Gemini SDK.
+
+    The Gemini SDK Schema model (google.genai.types.Schema) uses extra='forbid'
+    and rejects JSON Schema keywords not defined in its schema (such as
+    exclusiveMinimum, exclusiveMaximum, $schema, and examples). This function
+    normalizes or removes them so that schema validation in the SDK succeeds,
+    while full domain validation is maintained when parsing the model response.
+    """
+    if isinstance(schema, dict):
+        cleaned: dict[str, Any] = {}
+        for key, value in schema.items():
+            if key == "exclusiveMinimum":
+                if (
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and "minimum" not in schema
+                ):
+                    cleaned["minimum"] = value
+                continue
+            if key == "exclusiveMaximum":
+                if (
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and "maximum" not in schema
+                ):
+                    cleaned["maximum"] = value
+                continue
+            if key in {"$schema", "examples"}:
+                continue
+            cleaned[key] = sanitize_gemini_schema(value)
+        return cleaned
+    if isinstance(schema, list):
+        return [sanitize_gemini_schema(item) for item in schema]
+    return schema
+
+
+def gemini_response_schema(model_cls: type[BaseModel]) -> dict[str, Any]:
+    return sanitize_gemini_schema(model_cls.model_json_schema())
+
+
+def parse_gemini_response[TModel: BaseModel](response: Any, model_cls: type[TModel]) -> TModel:
+    if isinstance(getattr(response, "parsed", None), model_cls):
+        return response.parsed
+    if isinstance(getattr(response, "parsed", None), dict):
+        return model_cls.model_validate(response.parsed)
+    text = getattr(response, "text", "") or ""
+    cleaned = text.strip()
+    match = re.match(r"^```(?:json)?\s*([\s\S]*?)\s*```$", cleaned)
+    if match:
+        cleaned = match.group(1).strip()
+    return model_cls.model_validate_json(cleaned)
 
 
 class AiUnavailableError(RuntimeError):
@@ -166,11 +220,11 @@ CONVERSAZIONE:
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
-                    response_schema=AiAnswer,
+                    response_schema=gemini_response_schema(AiAnswer),
                     temperature=0.3,
                 ),
             )
-            parsed = response.parsed or AiAnswer.model_validate_json(response.text)
+            parsed = parse_gemini_response(response, AiAnswer)
             allowed_ids = {str(recipe.id) for recipe in recipes}
             references = [
                 recipe_id for recipe_id in parsed.referenced_recipe_ids if recipe_id in allowed_ids
@@ -199,11 +253,11 @@ CONVERSAZIONE:
                 ),
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
-                    response_schema=RecipeCreate,
+                    response_schema=gemini_response_schema(RecipeCreate),
                     temperature=0.4,
                 ),
             )
-            draft = response.parsed or RecipeCreate.model_validate_json(response.text)
+            draft = parse_gemini_response(response, RecipeCreate)
             draft.source = RecipeSource(type="ai")
             return draft
         except Exception as error:
