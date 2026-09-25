@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
 from abc import ABC, abstractmethod
 from typing import Literal
 
@@ -10,9 +12,20 @@ from .config import Settings
 from .domain import ChatMessage, ChatResponse, Recipe, RecipeCreate, RecipeSource
 from .repository import RecipeRepository
 
+logger = logging.getLogger(__name__)
+
 
 class AiUnavailableError(RuntimeError):
     pass
+
+
+def gemini_error(error: Exception) -> AiUnavailableError:
+    message = getattr(error, "message", None) or str(error) or type(error).__name__
+    message = re.sub(r"AIza[0-9A-Za-z_-]+", "[API_KEY_REDACTED]", message)
+    message = " ".join(message.split())[:800]
+    detail = f"Gemini {type(error).__name__}: {message}"
+    logger.warning(detail)
+    return AiUnavailableError(detail)
 
 
 class AiAnswer(BaseModel):
@@ -170,8 +183,8 @@ CONVERSAZIONE:
                 proposed_recipe=parsed.proposed_recipe,
                 rationale=parsed.rationale,
             )
-        except Exception as error:  # API errors are intentionally normalized
-            raise AiUnavailableError(f"Gemini non è disponibile: {type(error).__name__}") from error
+        except Exception as error:
+            raise gemini_error(error) from error
 
     async def create_draft(self, prompt: str) -> RecipeCreate:
         try:
@@ -194,7 +207,7 @@ CONVERSAZIONE:
             draft.source = RecipeSource(type="ai")
             return draft
         except Exception as error:
-            raise AiUnavailableError(f"Gemini non è disponibile: {type(error).__name__}") from error
+            raise gemini_error(error) from error
 
 
 class AiService:

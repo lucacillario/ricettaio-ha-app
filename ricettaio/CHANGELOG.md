@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5
+
+- Mostrato nei log e nell'interfaccia il motivo restituito da Gemini, con API key redatta.
+
 ## 0.1.4
 
 - Consentiti gli health check locali quando la modalità Ingress rigorosa è attiva.
