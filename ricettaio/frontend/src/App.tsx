@@ -720,7 +720,9 @@ function ChatPanel({ recipeId, recipeTitle, onClose }: { recipeId?: string; reci
   const [error, setError] = useState<string | null>(null);
   const [proposal, setProposal] = useState<AiProposal | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [messages]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const send = async (event: FormEvent) => {
     event.preventDefault();

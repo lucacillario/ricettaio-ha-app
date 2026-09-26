@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.5
+
+- Corretto il crash React della chat sotto Home Assistant causato dal valore restituito da `scrollIntoView`.
+
 ## 0.2.4
 
 - Rimossa tutta la gestione speciale dei modelli OpenRouter gratuiti.

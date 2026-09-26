@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
@@ -35,11 +35,23 @@ const recipePage = {
 describe("RicettAIo", () => {
   beforeEach(() => {
     window.location.hash = "#/";
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(() => ({ animation: "home-assistant" })),
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        const body = url.includes("categories") ? categories : recipePage;
+        const body = url.includes("categories")
+          ? categories
+          : url.includes("ai/chat")
+            ? {
+                message: "Ciao! Sono RicettAIo.",
+                referenced_recipe_ids: [],
+                proposal: null,
+              }
+            : recipePage;
         return new Response(JSON.stringify(body), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -48,7 +60,10 @@ describe("RicettAIo", () => {
     );
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+  });
 
   it("mostra l'archivio e una ricetta", async () => {
     render(<App />);
@@ -56,5 +71,16 @@ describe("RicettAIo", () => {
     await waitFor(() => expect(screen.getByText("Pasta e ceci")).toBeInTheDocument());
     expect(screen.getByText(/35 min/)).toBeInTheDocument();
     expect(screen.getByText(/dispensa/)).toBeInTheDocument();
+  });
+
+  it("non usa il risultato di scrollIntoView come cleanup della chat", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /chiedi all'ai/i }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Messaggio" }), {
+      target: { value: "Ciao" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Invia" }));
+
+    await waitFor(() => expect(screen.getByText("Ciao! Sono RicettAIo.")).toBeInTheDocument());
   });
 });
