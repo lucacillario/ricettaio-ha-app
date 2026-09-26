@@ -129,7 +129,10 @@ function Header({ onChat, onNew }: { onChat: () => void; onNew: () => void }) {
         </span>
       </button>
       <nav aria-label="Azioni principali">
-        <button className="button button-quiet" onClick={onChat}>✦ Chiedi all'AI</button>
+        <button className="button ai-button" onClick={onChat}>
+          <span aria-hidden="true">✦</span>
+          <span className="ai-button-label">Chiedi all'AI</span>
+        </button>
         <button className="button button-primary" onClick={onNew}>＋ Nuova ricetta</button>
       </nav>
     </header>
@@ -154,6 +157,9 @@ function RecipeArchive({
   const [difficulty, setDifficulty] = useState("");
   const [sort, setSort] = useState("updated_desc");
   const [favorites, setFavorites] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilterCount = Number(Boolean(category)) + Number(Boolean(difficulty))
+    + Number(favorites) + Number(sort !== "updated_desc");
 
   const load = async () => {
     setLoading(true);
@@ -242,17 +248,34 @@ function RecipeArchive({
             void load();
           }}
         >
-          <label className="search-box">
-            <span aria-hidden="true">⌕</span>
-            <span className="sr-only">Cerca nelle ricette</span>
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Cerca una ricetta, un ingrediente, un ricordo…"
-            />
-            <button type="submit" className="button button-dark">Cerca</button>
-          </label>
-          <div className="filters" aria-label="Filtri ricette">
+          <div className="search-box">
+            <label className="search-input">
+              <span aria-hidden="true">⌕</span>
+              <span className="sr-only">Cerca nelle ricette</span>
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Cerca una ricetta, un ingrediente, un ricordo…"
+              />
+            </label>
+            <button
+              type="button"
+              className={`button filter-toggle ${filtersOpen ? "active" : ""}`}
+              aria-expanded={filtersOpen}
+              aria-controls="recipe-filters"
+              onClick={() => setFiltersOpen((current) => !current)}
+            >
+              Filtri{activeFilterCount > 0 && <span>{activeFilterCount}</span>}
+              <i aria-hidden="true">⌄</i>
+            </button>
+            <button type="submit" className="button button-primary search-submit">Cerca</button>
+          </div>
+          <div
+            id="recipe-filters"
+            className={`filters ${filtersOpen ? "open" : ""}`}
+            aria-label="Filtri ricette"
+            hidden={!filtersOpen}
+          >
             <select value={category} onChange={(event) => setCategory(event.target.value)}>
               <option value="">Tutte le categorie</option>
               {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -693,8 +716,8 @@ function RecipeEditor({
 
         <FormSection number="05" title="Dettagli e copertina">
           <div className="field-grid two">
-            <Field label="Tag (separati da virgola)"><input value={form.tags.join(", ")} onChange={(event) => update("tags", commaList(event.target.value))} placeholder="vegetariano, veloce" /></Field>
-            <Field label="Attrezzatura (separata da virgola)"><input value={form.equipment.join(", ")} onChange={(event) => update("equipment", commaList(event.target.value))} placeholder="pentola, frullatore" /></Field>
+            <Field label="Tag (separati da virgola)"><CommaListInput value={form.tags} onChange={(value) => update("tags", value)} placeholder="vegetariano, veloce" /></Field>
+            <Field label="Attrezzatura (separata da virgola)"><CommaListInput value={form.equipment} onChange={(value) => update("equipment", value)} placeholder="pentola, frullatore" /></Field>
             <Field label="Note" wide><textarea rows={4} value={form.notes ?? ""} onChange={(event) => update("notes", nullIfEmpty(event.target.value))} /></Field>
             <Field label="Immagine di copertina" wide>
               <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { setCover(event.target.files?.[0] ?? null); dirty.current = true; }} />
@@ -822,6 +845,34 @@ function NumberInput({ value, onChange }: { value: number | null; onChange: (val
   return <input type="number" min="0" value={value ?? ""} onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))} />;
 }
 
+function CommaListInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string[];
+  onChange: (value: string[]) => void;
+  placeholder: string;
+}) {
+  const [draft, setDraft] = useState(() => value.join(", "));
+
+  useEffect(() => {
+    if (!sameList(commaList(draft), value)) setDraft(value.join(", "));
+  }, [value, draft]);
+
+  return (
+    <input
+      value={draft}
+      onChange={(event) => {
+        const next = event.target.value;
+        setDraft(next);
+        onChange(commaList(next));
+      }}
+      placeholder={placeholder}
+    />
+  );
+}
+
 function ErrorBanner({ message, retry }: { message: string; retry?: () => void }) {
   return <div className="error-banner" role="alert"><span>{message}</span>{retry && <button onClick={retry}>Riprova</button>}</div>;
 }
@@ -884,6 +935,7 @@ function updateStep<K extends keyof RecipeStep>(index: number, key: K, value: Re
 }
 
 function commaList(value: string) { return value.split(",").map((item) => item.trim()).filter(Boolean); }
+function sameList(left: string[], right: string[]) { return left.length === right.length && left.every((item, index) => item === right[index]); }
 function nullIfEmpty(value: string) { return value.trim() ? value : null; }
 function formatOptionalTime(value: number | null) { return value === null ? "—" : formatTime(value); }
 function formatTime(minutes: number) { if (minutes < 60) return `${minutes} min`; const hours = Math.floor(minutes / 60); const rest = minutes % 60; return rest ? `${hours} h ${rest} min` : `${hours} h`; }

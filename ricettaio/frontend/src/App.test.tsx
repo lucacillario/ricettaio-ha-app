@@ -83,4 +83,26 @@ describe("RicettAIo", () => {
 
     await waitFor(() => expect(screen.getByText("Ciao! Sono RicettAIo.")).toBeInTheDocument());
   });
+
+  it("mantiene la virgola mentre si inseriscono i tag", async () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /nuova ricetta/i }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: /aggiungi qualcosa di buono/i })).toBeInTheDocument());
+
+    const tags = screen.getByLabelText(/tag \(separati da virgola\)/i);
+    fireEvent.change(tags, { target: { value: "veloce," } });
+    expect(tags).toHaveValue("veloce,");
+    fireEvent.change(tags, { target: { value: "veloce, vegetariano" } });
+    expect(tags).toHaveValue("veloce, vegetariano");
+  });
+
+  it("mostra i filtri solo quando richiesto", async () => {
+    render(<App />);
+    const toggle = screen.getByRole("button", { name: "Filtri" });
+
+    expect(screen.queryByRole("option", { name: "Tutte le categorie" })).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.getByRole("option", { name: "Tutte le categorie" })).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+  });
 });

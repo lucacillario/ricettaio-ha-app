@@ -300,8 +300,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async def spa(path: str) -> FileResponse:
             candidate = (frontend_dir / path).resolve()
             if path and candidate.is_file() and frontend_dir.resolve() in candidate.parents:
-                return FileResponse(candidate)
-            return FileResponse(frontend_dir / "index.html")
+                headers = {"Cache-Control": "no-store"} if candidate.name == "index.html" else None
+                return FileResponse(candidate, headers=headers)
+            return FileResponse(
+                frontend_dir / "index.html",
+                headers={"Cache-Control": "no-store"},
+            )
 
     return app
 

@@ -2,7 +2,7 @@
 
 RicettAIo è un ricettario personale con assistente AI, progettato come app per Home Assistant. Il nucleo locale funziona senza AI; Gemini aggiunge creazione guidata, ricerca conversazionale e variazioni confermabili.
 
-La versione `0.1.0` implementa il primo MVP locale. Le decisioni di prodotto, il modello dati e il piano delle evoluzioni sono raccolti in [SPECIFICHE.md](SPECIFICHE.md).
+La versione `0.3.0` implementa il primo MVP locale. Le decisioni di prodotto, il modello dati e il piano delle evoluzioni sono raccolti in [SPECIFICHE.md](SPECIFICHE.md).
 
 ## Architettura
 

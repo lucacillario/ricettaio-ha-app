@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- Nuovo tema scuro completo e interfaccia responsive rifinita.
+- Filtri dell'archivio richiudibili con indicatore dei filtri attivi.
+- Accesso alla chat AI sempre visibile anche su mobile.
+- Corretto l'inserimento manuale di tag e attrezzatura separati da virgole.
+- Disabilitata la cache dell'HTML per evitare bundle frontend obsoleti dopo gli aggiornamenti.
+
 ## 0.2.5
 
 - Corretto il crash React della chat sotto Home Assistant causato dal valore restituito da `scrollIntoView`.
