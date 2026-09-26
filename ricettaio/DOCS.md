@@ -4,12 +4,14 @@ RicettAIo conserva le ricette localmente nello spazio persistente dell'app e le 
 
 ## Prima configurazione
 
-L'archivio manuale funziona senza servizi esterni. Per attivare l'assistente AI:
+L'archivio manuale funziona senza servizi esterni. La configurazione consigliata usa OpenRouter:
 
-1. crea una API key dedicata in Google AI Studio;
-2. inseriscila in `gemini_api_key`;
-3. indica in `gemini_model` un modello Gemini Flash stabile supportato;
+1. crea una API key dedicata su OpenRouter;
+2. imposta `ai_provider` su `openrouter` e inseriscila in `openrouter_api_key`;
+3. lascia la catena predefinita oppure indica in `openrouter_models` modelli separati da virgola;
 4. abilita `ai_enabled` e riavvia l'app.
+
+I modelli sono tentati in ordine. OpenRouter usa soltanto endpoint compatibili con i parametri richiesti, senza raccolta dati e con Zero Data Retention. Gemini diretto resta disponibile impostando `ai_provider` su `gemini`.
 
 La chiave viene salvata nelle opzioni dell'app e può essere inclusa nei backup Home Assistant. Non viene mai inviata al frontend né scritta nei log applicativi.
 

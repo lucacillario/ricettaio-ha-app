@@ -60,14 +60,17 @@ Il file `repository.yaml` nella radice identifica il progetto come repository di
 Nella scheda **Configurazione** dell'app inserisci:
 
 ```yaml
-gemini_api_key: "LA_TUA_CHIAVE"
-gemini_model: "gemini-3.5-flash"
+ai_provider: "openrouter"
+openrouter_api_key: "LA_TUA_CHIAVE"
+openrouter_models: "deepseek/deepseek-v4.1-flash,google/gemini-3.8-flash,openai/gpt-5.2"
 ai_enabled: true
 strict_ingress: true
 trash_retention_days: 30
 ```
 
-Salva la configurazione e riavvia l'app. La chiave Gemini viene conservata nelle opzioni private dell'app e non deve essere aggiunta ai file del repository.
+I modelli sono provati nell'ordine indicato. Le richieste OpenRouter richiedono provider compatibili con JSON Schema, Zero Data Retention e nessuna raccolta dati. Salva e riavvia l'app. La chiave viene conservata nelle opzioni private e non deve essere aggiunta al repository.
+
+Per continuare a usare Gemini direttamente imposta `ai_provider: "gemini"` e configura `gemini_api_key` e `gemini_model`.
 
 ### Installazione locale alternativa
 

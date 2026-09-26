@@ -1,4 +1,13 @@
 configuration:
+  ai_provider:
+    name: Provider AI
+    description: Usa openrouter (consigliato) oppure gemini per l'accesso diretto.
+  openrouter_api_key:
+    name: Chiave API OpenRouter
+    description: Chiave dedicata OpenRouter; non viene mostrata al frontend.
+  openrouter_models:
+    name: Modelli OpenRouter
+    description: Modelli in ordine di priorità, separati da virgola; i successivi sono fallback.
   gemini_api_key:
     name: Chiave API Gemini
     description: Chiave dedicata della Gemini Developer API; non viene mostrata al frontend.

@@ -6,6 +6,7 @@ import re
 from abc import ABC, abstractmethod
 from typing import Any, Literal
 
+import httpx
 from pydantic import BaseModel, Field
 
 from .config import Settings
@@ -81,6 +82,15 @@ def gemini_error(error: Exception) -> AiUnavailableError:
     message = re.sub(r"AIza[0-9A-Za-z_-]+", "[API_KEY_REDACTED]", message)
     message = " ".join(message.split())[:800]
     detail = f"Gemini {type(error).__name__}: {message}"
+    logger.warning(detail)
+    return AiUnavailableError(detail)
+
+
+def openrouter_error(error: Exception) -> AiUnavailableError:
+    message = getattr(error, "message", None) or str(error) or type(error).__name__
+    message = re.sub(r"sk-or-v1-[0-9A-Za-z_-]+", "[API_KEY_REDACTED]", message)
+    message = " ".join(message.split())[:800]
+    detail = f"OpenRouter {type(error).__name__}: {message}"
     logger.warning(detail)
     return AiUnavailableError(detail)
 
@@ -267,6 +277,127 @@ CONVERSAZIONE:
             raise gemini_error(error) from error
 
 
+class OpenRouterAiProvider(AiProvider):
+    endpoint = "https://openrouter.ai/api/v1/chat/completions"
+
+    def __init__(
+        self,
+        api_key: str,
+        models: tuple[str, ...],
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
+        if not api_key:
+            raise AiUnavailableError("La chiave OpenRouter non è configurata")
+        if not models:
+            raise AiUnavailableError("Non è configurato alcun modello OpenRouter")
+        self.api_key = api_key
+        self.models = models
+        self.client = client
+
+    async def chat(self, messages: list[ChatMessage], recipes: list[Recipe]) -> ProviderChatResult:
+        context = [recipe.model_dump(mode="json") for recipe in recipes]
+        transcript = "\n".join(f"{item.role}: {item.content}" for item in messages)
+        prompt = f"""
+Sei l'assistente di RicettAIo. Rispondi in italiano in modo pratico e prudente.
+Usa come fatti sulle ricette locali soltanto il contesto JSON fornito.
+Non dichiarare di avere salvato, modificato o eliminato dati.
+Se l'utente chiede esplicitamente una creazione, modifica o eliminazione, restituisci
+l'azione corrispondente. Per create/update, proposed_recipe deve contenere la ricetta
+completa. Per update/delete, target_recipe_id deve essere uno degli ID nel contesto.
+Altrimenti usa action=none. Ogni azione sarà soltanto una proposta da confermare.
+Per allergie, conservazione e sicurezza alimentare invita a verificare fonti affidabili.
+
+RICETTE LOCALI:
+{json.dumps(context, ensure_ascii=False)}
+
+CONVERSAZIONE:
+{transcript}
+"""
+        parsed = await self._structured_completion(prompt, AiAnswer, "ricettaio_answer", 0.3)
+        allowed_ids = {str(recipe.id) for recipe in recipes}
+        return ProviderChatResult(
+            message=parsed.message,
+            referenced_recipe_ids=[
+                recipe_id
+                for recipe_id in parsed.referenced_recipe_ids
+                if recipe_id in allowed_ids
+            ],
+            action=parsed.action,
+            target_recipe_id=parsed.target_recipe_id,
+            proposed_recipe=parsed.proposed_recipe,
+            rationale=parsed.rationale,
+        )
+
+    async def create_draft(self, prompt: str) -> RecipeCreate:
+        instruction = (
+            "Crea una bozza di ricetta in italiano dalla richiesta seguente. "
+            "Non inventare allergeni come certezza e usa quantità culinarie plausibili. "
+            f"La fonte deve essere di tipo ai. Richiesta: {prompt}"
+        )
+        draft = await self._structured_completion(
+            instruction, RecipeCreate, "ricettaio_recipe", 0.4
+        )
+        draft.source = RecipeSource(type="ai")
+        return draft
+
+    async def _structured_completion[TModel: BaseModel](
+        self,
+        prompt: str,
+        model_cls: type[TModel],
+        schema_name: str,
+        temperature: float,
+    ) -> TModel:
+        payload: dict[str, Any] = {
+            "models": list(self.models),
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "strict": True,
+                    "schema": model_cls.model_json_schema(),
+                },
+            },
+            "provider": {
+                "require_parameters": True,
+                "data_collection": "deny",
+                "zdr": True,
+            },
+        }
+        try:
+            response = await self._post(payload)
+            if response.status_code >= 400:
+                try:
+                    error_body = response.json()
+                    message = error_body.get("error", {}).get("message") or response.text
+                except (ValueError, AttributeError):
+                    message = response.text
+                raise RuntimeError(f"HTTP {response.status_code}: {message[:600]}")
+            body = response.json()
+            content = body["choices"][0]["message"]["content"]
+            if isinstance(content, list):
+                content = "".join(
+                    str(item.get("text", "")) for item in content if isinstance(item, dict)
+                )
+            return model_cls.model_validate_json(content)
+        except AiUnavailableError:
+            raise
+        except Exception as error:
+            raise openrouter_error(error) from error
+
+    async def _post(self, payload: dict[str, Any]) -> httpx.Response:
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/lucacillario/ricettaio-ha-app",
+            "X-Title": "RicettAIo",
+        }
+        if self.client is not None:
+            return await self.client.post(self.endpoint, headers=headers, json=payload)
+        async with httpx.AsyncClient(timeout=90) as client:
+            return await client.post(self.endpoint, headers=headers, json=payload)
+
 class AiService:
     def __init__(
         self, settings: Settings, repository: RecipeRepository, provider: AiProvider | None = None
@@ -281,7 +412,11 @@ class AiService:
             return False
         if self.settings.ai_provider == "fake":
             return True
-        return bool(self.settings.gemini_api_key and self.settings.gemini_model)
+        if self.settings.ai_provider == "openrouter":
+            return bool(self.settings.openrouter_api_key and self.settings.openrouter_models)
+        if self.settings.ai_provider == "gemini":
+            return bool(self.settings.gemini_api_key and self.settings.gemini_model)
+        return False
 
     async def chat(self, messages: list[ChatMessage], recipe_id: str | None) -> ChatResponse:
         provider = self._get_provider()
@@ -336,10 +471,16 @@ class AiService:
             return self._provider
         if self.settings.ai_provider == "fake":
             self._provider = FakeAiProvider()
-        else:
+        elif self.settings.ai_provider == "openrouter":
+            self._provider = OpenRouterAiProvider(
+                self.settings.openrouter_api_key, self.settings.openrouter_models
+            )
+        elif self.settings.ai_provider == "gemini":
             self._provider = GeminiAiProvider(
                 self.settings.gemini_api_key, self.settings.gemini_model
             )
+        else:
+            raise AiUnavailableError(f"Provider AI non supportato: {self.settings.ai_provider}")
         return self._provider
 
 

@@ -1,12 +1,13 @@
 [project]
 name = "ricettaio-backend"
-version = "0.1.0"
+version = "0.2.0"
 description = "Backend FastAPI per RicettAIo"
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 dependencies = [
   "fastapi>=0.115,<1",
   "google-genai>=1.0,<2",
+  "httpx>=0.28,<1",
   "pillow>=11,<13",
   "pydantic>=2.10,<3",
   "python-multipart>=0.0.20,<1",

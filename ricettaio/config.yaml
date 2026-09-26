@@ -1,6 +1,6 @@
 name: RicettAIo
 description: Ricettario personale con assistente AI
-version: "0.1.7"
+version: "0.2.0"
 slug: ricettaio
 stage: experimental
 init: false
@@ -17,12 +17,18 @@ panel_title: RicettAIo
 panel_admin: false
 backup: cold
 options:
+  ai_provider: openrouter
+  openrouter_api_key: ""
+  openrouter_models: "deepseek/deepseek-v4.1-flash,google/gemini-3.8-flash,openai/gpt-5.2"
   gemini_api_key: ""
   gemini_model: ""
   ai_enabled: false
   strict_ingress: true
   trash_retention_days: 30
 schema:
+  ai_provider: str
+  openrouter_api_key: password
+  openrouter_models: str
   gemini_api_key: password
   gemini_model: str
   ai_enabled: bool

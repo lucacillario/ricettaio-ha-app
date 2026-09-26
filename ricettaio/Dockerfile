@@ -38,6 +38,7 @@ EXPOSE 8099
 ENV RICETTAIO_DATA_DIR=/data \
     RICETTAIO_OPTIONS_PATH=/data/options.json \
     RICETTAIO_FRONTEND_DIR=/app/frontend \
+    RICETTAIO_VERSION=${BUILD_VERSION} \
     PYTHONUNBUFFERED=1
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 from typing import Any
 
+import httpx
 import pytest
 from google.genai import _transformers as t
 from google.genai import types
@@ -10,11 +12,12 @@ from pydantic import ValidationError
 
 from app.ai import (
     AiAnswer,
+    OpenRouterAiProvider,
     gemini_response_schema,
     parse_gemini_response,
     sanitize_gemini_schema,
 )
-from app.domain import RecipeCreate
+from app.domain import ChatMessage, RecipeCreate
 
 
 class MockResponse:
@@ -135,3 +138,60 @@ def test_parse_gemini_response_preserves_strict_pydantic_validation() -> None:
     }
     with pytest.raises(ValidationError):
         parse_gemini_response(MockResponse(parsed=invalid_payload), AiAnswer)
+
+
+@pytest.mark.anyio
+async def test_openrouter_uses_fallbacks_structured_output_and_privacy() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(json.loads(request.content))
+        assert request.headers["Authorization"] == "Bearer sk-or-v1-test"
+        return httpx.Response(
+            200,
+            json={
+                "model": "deepseek/deepseek-v4.1-flash",
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "message": "Nessuna ricetta trovata.",
+                                    "referenced_recipe_ids": [],
+                                    "action": "none",
+                                    "target_recipe_id": None,
+                                    "proposed_recipe": None,
+                                    "rationale": None,
+                                }
+                            )
+                        }
+                    }
+                ],
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OpenRouterAiProvider(
+            "sk-or-v1-test",
+            (
+                "deepseek/deepseek-v4.1-flash",
+                "google/gemini-3.8-flash",
+                "openai/gpt-5.2",
+            ),
+            client,
+        )
+        result = await provider.chat([ChatMessage(role="user", content="Cosa posso cucinare?")], [])
+
+    assert result.message == "Nessuna ricetta trovata."
+    assert captured["models"] == [
+        "deepseek/deepseek-v4.1-flash",
+        "google/gemini-3.8-flash",
+        "openai/gpt-5.2",
+    ]
+    assert captured["response_format"]["type"] == "json_schema"
+    assert captured["response_format"]["json_schema"]["strict"] is True
+    assert captured["provider"] == {
+        "require_parameters": True,
+        "data_collection": "deny",
+        "zdr": True,
+    }

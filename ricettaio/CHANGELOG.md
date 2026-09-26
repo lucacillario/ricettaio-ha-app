@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- Aggiunto OpenRouter come provider AI consigliato, mantenendo Gemini diretto opzionale.
+- Aggiunta una catena configurabile di modelli con fallback automatico.
+- Abilitati JSON Schema, Zero Data Retention e divieto di raccolta dati per OpenRouter.
+
 ## 0.1.7
 
 - Rimosso `additionalProperties` dallo schema inviato a Gemini per evitare errori di payload non valido sulle API REST.
