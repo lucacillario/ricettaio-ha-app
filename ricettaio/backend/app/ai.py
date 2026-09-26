@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from typing import Any, Literal
 
 import httpx
@@ -90,6 +91,44 @@ def parse_gemini_response[TModel: BaseModel](response: Any, model_cls: type[TMod
     return model_cls.model_validate_json(cleaned)
 
 
+def partial_json_string(document: str, key: str) -> str:
+    """Decode the complete portion of a possibly unfinished JSON string property."""
+    match = re.search(rf'"{re.escape(key)}"\s*:\s*"', document)
+    if not match:
+        return ""
+    encoded = document[match.end() :]
+    index = 0
+    safe_end = 0
+    while index < len(encoded):
+        character = encoded[index]
+        if character == '"':
+            break
+        if character == "\\":
+            if index + 1 >= len(encoded):
+                break
+            if encoded[index + 1] == "u":
+                escape_end = index + 6
+                if escape_end > len(encoded) or not re.fullmatch(
+                    r"[0-9a-fA-F]{4}", encoded[index + 2 : escape_end]
+                ):
+                    break
+                index = escape_end
+            else:
+                index += 2
+        else:
+            index += 1
+        safe_end = index
+    if safe_end == 0:
+        return ""
+    try:
+        decoded = json.loads(f'"{encoded[:safe_end]}"')
+        if decoded and 0xD800 <= ord(decoded[-1]) <= 0xDBFF:
+            return decoded[:-1]
+        return decoded
+    except (ValueError, UnicodeDecodeError):
+        return ""
+
+
 class AiUnavailableError(RuntimeError):
     pass
 
@@ -130,6 +169,11 @@ class ProviderChatResult(BaseModel):
     rationale: str | None = None
 
 
+class ProviderStreamEvent(BaseModel):
+    delta: str | None = None
+    result: ProviderChatResult | None = None
+
+
 class AiProvider(ABC):
     @abstractmethod
     async def chat(self, messages: list[ChatMessage], recipes: list[Recipe]) -> ProviderChatResult:
@@ -138,6 +182,13 @@ class AiProvider(ABC):
     @abstractmethod
     async def create_draft(self, prompt: str) -> RecipeCreate:
         raise NotImplementedError
+
+    async def chat_stream(
+        self, messages: list[ChatMessage], recipes: list[Recipe]
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        result = await self.chat(messages, recipes)
+        yield ProviderStreamEvent(delta=result.message)
+        yield ProviderStreamEvent(result=result)
 
 
 class FakeAiProvider(AiProvider):
@@ -314,9 +365,28 @@ class OpenRouterAiProvider(AiProvider):
         self.client = client
 
     async def chat(self, messages: list[ChatMessage], recipes: list[Recipe]) -> ProviderChatResult:
+        parsed = await self._structured_completion(
+            self._chat_prompt(messages, recipes), AiAnswer, "ricettaio_answer", 0.3
+        )
+        return self._chat_result(parsed, recipes)
+
+    async def chat_stream(
+        self, messages: list[ChatMessage], recipes: list[Recipe]
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        stream = self._structured_completion_stream(
+            self._chat_prompt(messages, recipes), AiAnswer, "ricettaio_answer", 0.3
+        )
+        async for item in stream:
+            if isinstance(item, str):
+                yield ProviderStreamEvent(delta=item)
+            else:
+                yield ProviderStreamEvent(result=self._chat_result(item, recipes))
+
+    @staticmethod
+    def _chat_prompt(messages: list[ChatMessage], recipes: list[Recipe]) -> str:
         context = [recipe.model_dump(mode="json") for recipe in recipes]
         transcript = "\n".join(f"{item.role}: {item.content}" for item in messages)
-        prompt = f"""
+        return f"""
 Sei l'assistente di RicettAIo. Rispondi in italiano in modo pratico e prudente.
 Usa come fatti sulle ricette locali soltanto il contesto JSON fornito.
 Non dichiarare di avere salvato, modificato o eliminato dati.
@@ -332,7 +402,9 @@ RICETTE LOCALI:
 CONVERSAZIONE:
 {transcript}
 """
-        parsed = await self._structured_completion(prompt, AiAnswer, "ricettaio_answer", 0.3)
+
+    @staticmethod
+    def _chat_result(parsed: AiAnswer, recipes: list[Recipe]) -> ProviderChatResult:
         allowed_ids = {str(recipe.id) for recipe in recipes}
         return ProviderChatResult(
             message=parsed.message,
@@ -366,6 +438,30 @@ CONVERSAZIONE:
         schema_name: str,
         temperature: float,
     ) -> TModel:
+        payload = self._completion_payload(prompt, model_cls, schema_name, temperature)
+        try:
+            response = await self._post(payload)
+            body = self._response_body(response)
+            if response.status_code >= 400:
+                message = self._response_error_message(body) or response.text
+                raise RuntimeError(f"HTTP {response.status_code}: {message[:600]}")
+
+            embedded_error = self._response_error_message(body)
+            if embedded_error:
+                raise RuntimeError(f"API: {embedded_error[:600]}")
+            return model_cls.model_validate_json(self._response_content(body))
+        except AiUnavailableError:
+            raise
+        except Exception as error:
+            raise openrouter_error(error) from error
+
+    def _completion_payload[TModel: BaseModel](
+        self,
+        prompt: str,
+        model_cls: type[TModel],
+        schema_name: str,
+        temperature: float,
+    ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "models": list(self.models),
             "messages": [{"role": "user", "content": prompt}],
@@ -384,21 +480,60 @@ CONVERSAZIONE:
             provider_preferences.update({"data_collection": "deny", "zdr": True})
         if provider_preferences:
             payload["provider"] = provider_preferences
-        try:
-            response = await self._post(payload)
-            body = self._response_body(response)
-            if response.status_code >= 400:
-                message = self._response_error_message(body) or response.text
-                raise RuntimeError(f"HTTP {response.status_code}: {message[:600]}")
+        return payload
 
-            embedded_error = self._response_error_message(body)
-            if embedded_error:
-                raise RuntimeError(f"API: {embedded_error[:600]}")
-            return model_cls.model_validate_json(self._response_content(body))
+    async def _structured_completion_stream[TModel: BaseModel](
+        self,
+        prompt: str,
+        model_cls: type[TModel],
+        schema_name: str,
+        temperature: float,
+    ) -> AsyncIterator[str | TModel]:
+        payload = self._completion_payload(prompt, model_cls, schema_name, temperature)
+        payload["stream"] = True
+        client = self.client or httpx.AsyncClient(timeout=90)
+        owns_client = self.client is None
+        raw_content = ""
+        emitted_message = ""
+        try:
+            async with client.stream(
+                "POST", self.endpoint, headers=self._headers(), json=payload
+            ) as response:
+                if response.status_code >= 400:
+                    await response.aread()
+                    body = self._response_body(response)
+                    message = self._response_error_message(body) or response.text
+                    raise RuntimeError(f"HTTP {response.status_code}: {message[:600]}")
+
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if not data or data == "[DONE]":
+                        continue
+                    event = json.loads(data)
+                    embedded_error = self._response_error_message(event)
+                    if embedded_error:
+                        raise RuntimeError(f"API: {embedded_error[:600]}")
+                    chunk = self._stream_content(event)
+                    if not chunk:
+                        continue
+                    raw_content += chunk
+                    partial_message = partial_json_string(raw_content, "message")
+                    if len(partial_message) > len(emitted_message):
+                        delta = partial_message[len(emitted_message) :]
+                        emitted_message = partial_message
+                        yield delta
+
+            cleaned = self._clean_content(raw_content)
+            yield model_cls.model_validate_json(cleaned)
         except AiUnavailableError:
             raise
         except Exception as error:
             raise openrouter_error(error) from error
+        finally:
+            if owns_client:
+                await client.aclose()
 
     @staticmethod
     def _response_body(response: httpx.Response) -> Any:
@@ -433,20 +568,43 @@ CONVERSAZIONE:
             )
         if not isinstance(content, str) or not content.strip():
             raise RuntimeError("Risposta OpenRouter priva di contenuto")
+        return OpenRouterAiProvider._clean_content(content)
+
+    @staticmethod
+    def _clean_content(content: str) -> str:
         fenced = re.match(r"^```(?:json)?\s*([\s\S]*?)\s*```$", content.strip())
         return fenced.group(1).strip() if fenced else content.strip()
 
-    async def _post(self, payload: dict[str, Any]) -> httpx.Response:
-        headers = {
+    @staticmethod
+    def _stream_content(body: Any) -> str:
+        choices = body.get("choices") if isinstance(body, dict) else None
+        if not isinstance(choices, list) or not choices:
+            return ""
+        choice = choices[0]
+        delta = choice.get("delta") if isinstance(choice, dict) else None
+        content = delta.get("content") if isinstance(delta, dict) else None
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return "".join(
+                str(item.get("text", "")) for item in content if isinstance(item, dict)
+            )
+        return ""
+
+    def _headers(self) -> dict[str, str]:
+        return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "https://github.com/lucacillario/ricettaio-ha-app",
             "X-Title": "RicettAIo",
         }
+
+    async def _post(self, payload: dict[str, Any]) -> httpx.Response:
         if self.client is not None:
-            return await self.client.post(self.endpoint, headers=headers, json=payload)
+            return await self.client.post(self.endpoint, headers=self._headers(), json=payload)
         async with httpx.AsyncClient(timeout=90) as client:
-            return await client.post(self.endpoint, headers=headers, json=payload)
+            return await client.post(self.endpoint, headers=self._headers(), json=payload)
+
 
 class AiService:
     def __init__(
@@ -470,15 +628,35 @@ class AiService:
 
     async def chat(self, messages: list[ChatMessage], recipe_id: str | None) -> ChatResponse:
         provider = self._get_provider()
-        if recipe_id:
-            recipes = [self.repository.get_recipe(recipe_id)]
-        else:
-            query = messages[-1].content
-            page = self.repository.list_recipes(query=query, limit=5)
-            if not page.items:
-                page = self.repository.list_recipes(limit=3)
-            recipes = [self.repository.get_recipe(item.id) for item in page.items]
+        recipes = self._chat_recipes(messages, recipe_id)
         result = await provider.chat(messages, recipes)
+        return self._finalize_chat(result, recipes)
+
+    async def chat_stream(
+        self, messages: list[ChatMessage], recipe_id: str | None
+    ) -> AsyncIterator[str | ChatResponse]:
+        provider = self._get_provider()
+        recipes = self._chat_recipes(messages, recipe_id)
+        async for event in provider.chat_stream(messages, recipes):
+            if event.delta is not None:
+                yield event.delta
+            if event.result is not None:
+                yield self._finalize_chat(event.result, recipes)
+
+    def _chat_recipes(
+        self, messages: list[ChatMessage], recipe_id: str | None
+    ) -> list[Recipe]:
+        if recipe_id:
+            return [self.repository.get_recipe(recipe_id)]
+        query = messages[-1].content
+        page = self.repository.list_recipes(query=query, limit=5)
+        if not page.items:
+            page = self.repository.list_recipes(limit=3)
+        return [self.repository.get_recipe(item.id) for item in page.items]
+
+    def _finalize_chat(
+        self, result: ProviderChatResult, recipes: list[Recipe]
+    ) -> ChatResponse:
         allowed = {str(recipe.id): recipe for recipe in recipes}
         references = [
             recipe_id for recipe_id in result.referenced_recipe_ids if recipe_id in allowed

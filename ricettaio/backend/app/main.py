@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -225,15 +226,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/v1/ai/chat/stream")
     async def ai_chat_stream(payload: ChatRequest) -> StreamingResponse:
-        answer = await ai_service.chat(
-            payload.messages, str(payload.recipe_id) if payload.recipe_id else None
-        )
-
         async def events() -> AsyncIterator[str]:
-            yield f"event: message\ndata: {answer.model_dump_json()}\n\n"
-            yield "event: done\ndata: {}\n\n"
+            try:
+                stream = ai_service.chat_stream(
+                    payload.messages, str(payload.recipe_id) if payload.recipe_id else None
+                )
+                async for item in stream:
+                    if isinstance(item, str):
+                        data = json.dumps({"text": item}, ensure_ascii=True)
+                        yield f"event: delta\ndata: {data}\n\n"
+                    else:
+                        yield f"event: result\ndata: {item.model_dump_json()}\n\n"
+                yield "event: done\ndata: {}\n\n"
+            except Exception as error:
+                detail = str(error) if isinstance(error, AiUnavailableError) else "Errore AI"
+                data = json.dumps({"detail": detail}, ensure_ascii=True)
+                yield f"event: error\ndata: {data}\n\n"
 
-        return StreamingResponse(events(), media_type="text/event-stream")
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.post("/api/v1/ai/drafts", response_model=RecipeCreate)
     async def create_ai_draft(payload: DraftRequest) -> RecipeCreate:

@@ -1,15 +1,15 @@
 # RicettAIo
 
-RicettAIo è un ricettario personale con assistente AI, progettato come app per Home Assistant. Il nucleo locale funziona senza AI; Gemini aggiunge creazione guidata, ricerca conversazionale e variazioni confermabili.
+RicettAIo è un ricettario personale con assistente AI, progettato come app per Home Assistant. Il nucleo locale funziona senza AI; OpenRouter aggiunge creazione guidata, chat in streaming, ricerca conversazionale e variazioni confermabili.
 
-La versione `0.3.0` implementa il primo MVP locale. Le decisioni di prodotto, il modello dati e il piano delle evoluzioni sono raccolti in [SPECIFICHE.md](SPECIFICHE.md).
+La versione `0.3.1` implementa il primo MVP locale. Le decisioni di prodotto, il modello dati e il piano delle evoluzioni sono raccolti in [SPECIFICHE.md](SPECIFICHE.md).
 
 ## Architettura
 
 - frontend React + TypeScript + Vite;
 - backend Python + FastAPI;
 - database SQLite e ricerca FTS5;
-- Gemini Developer API dietro un layer applicativo controllato;
+- OpenRouter con fallback configurabile e Gemini diretto opzionale;
 - singolo container con accesso Home Assistant Ingress;
 - dati persistenti in `/data` e backup gestito da Home Assistant.
 

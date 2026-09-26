@@ -16,6 +16,7 @@ from app.ai import (
     OpenRouterAiProvider,
     gemini_response_schema,
     parse_gemini_response,
+    partial_json_string,
     sanitize_gemini_schema,
     sanitize_openrouter_schema,
 )
@@ -152,6 +153,11 @@ def test_parse_gemini_response_preserves_strict_pydantic_validation() -> None:
         parse_gemini_response(MockResponse(parsed=invalid_payload), AiAnswer)
 
 
+def test_partial_json_string_decodes_only_complete_content() -> None:
+    assert partial_json_string('{"message":"Ciao\\nmon', "message") == "Ciao\nmon"
+    assert partial_json_string('{"message":"Ciao\\', "message") == "Ciao"
+
+
 @pytest.mark.anyio
 async def test_openrouter_uses_fallbacks_structured_output_and_privacy() -> None:
     captured: dict[str, Any] = {}
@@ -226,3 +232,47 @@ async def test_openrouter_reports_embedded_api_error_instead_of_key_error() -> N
         )
         with pytest.raises(AiUnavailableError, match="Upstream provider unavailable"):
             await provider.chat([ChatMessage(role="user", content="Ciao")], [])
+
+
+@pytest.mark.anyio
+async def test_openrouter_streams_message_and_returns_validated_result() -> None:
+    captured: dict[str, Any] = {}
+    structured = json.dumps(
+        {
+            "message": "Ciao dal ricettario",
+            "referenced_recipe_ids": [],
+            "action": "none",
+            "target_recipe_id": None,
+            "proposed_recipe": None,
+            "rationale": None,
+        }
+    )
+    chunks = [structured[:18], structured[18:31], structured[31:]]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(json.loads(request.content))
+        body = "".join(
+            f"data: {json.dumps({'choices': [{'delta': {'content': chunk}}]})}\n\n"
+            for chunk in chunks
+        )
+        body += "data: [DONE]\n\n"
+        return httpx.Response(200, text=body, headers={"Content-Type": "text/event-stream"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OpenRouterAiProvider(
+            "sk-or-v1-test",
+            ("deepseek/deepseek-v4.1-flash",),
+            strict_privacy=False,
+            client=client,
+        )
+        events = [
+            event
+            async for event in provider.chat_stream(
+                [ChatMessage(role="user", content="Ciao")], []
+            )
+        ]
+
+    assert captured["stream"] is True
+    assert "".join(event.delta or "" for event in events) == "Ciao dal ricettario"
+    assert events[-1].result is not None
+    assert events[-1].result.message == "Ciao dal ricettario"

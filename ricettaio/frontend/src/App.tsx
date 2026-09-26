@@ -740,12 +740,22 @@ function ChatPanel({ recipeId, recipeTitle, onClose }: { recipeId?: string; reci
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [waiting, setWaiting] = useState(false);
+  const [streamingStarted, setStreamingStarted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [proposal, setProposal] = useState<AiProposal | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+  useEffect(() => () => {
+    abortRef.current?.abort();
+  }, []);
+
+  const closeChat = () => {
+    abortRef.current?.abort();
+    onClose();
+  };
 
   const send = async (event: FormEvent) => {
     event.preventDefault();
@@ -755,15 +765,34 @@ function ChatPanel({ recipeId, recipeTitle, onClose }: { recipeId?: string; reci
     setMessages(next);
     setText("");
     setWaiting(true);
+    setStreamingStarted(false);
     setError(null);
+    setProposal(null);
+    const controller = new AbortController();
+    abortRef.current?.abort();
+    abortRef.current = controller;
+    let streamedMessage = "";
     try {
-      const response = await api.chat(next, recipeId);
+      const response = await api.chatStream(
+        next,
+        recipeId,
+        (delta) => {
+          streamedMessage += delta;
+          setStreamingStarted(true);
+          setMessages([...next, { role: "assistant", content: streamedMessage }]);
+        },
+        controller.signal,
+      );
       setMessages([...next, { role: "assistant", content: response.message }]);
       setProposal(response.proposal);
     } catch (reason) {
-      setError(errorMessage(reason));
+      if (!(reason instanceof Error && reason.name === "AbortError")) {
+        setError(errorMessage(reason));
+      }
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setWaiting(false);
+      setStreamingStarted(false);
     }
   };
 
@@ -794,11 +823,11 @@ function ChatPanel({ recipeId, recipeTitle, onClose }: { recipeId?: string; reci
   };
 
   return (
-    <div className="chat-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}>
+    <div className="chat-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) closeChat(); }}>
       <aside className="chat-panel" role="dialog" aria-modal="true" aria-labelledby="chat-title">
         <header>
           <div><p className="eyebrow">Assistente effimero</p><h2 id="chat-title">{recipeTitle ? `Parliamo di ${recipeTitle}` : "Chiedi al tuo ricettario"}</h2></div>
-          <button className="icon-button" onClick={onClose} aria-label="Chiudi e cancella la chat">×</button>
+          <button className="icon-button" onClick={closeChat} aria-label="Chiudi e cancella la chat">×</button>
         </header>
         <div className="chat-messages">
           {messages.length === 0 && (
@@ -819,7 +848,7 @@ function ChatPanel({ recipeId, recipeTitle, onClose }: { recipeId?: string; reci
               </div>
             </div>
           )}
-          {waiting && <div className="chat-message assistant typing">Sto pensando…</div>}
+          {waiting && !streamingStarted && <div className="chat-message assistant typing">Sto pensando…</div>}
           {error && <div className="chat-error">{error}</div>}
           <div ref={endRef} />
         </div>

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- Aggiunto streaming reale delle risposte OpenRouter fino al frontend tramite SSE.
+- La chat mostra il testo progressivamente e annulla la richiesta quando viene chiusa.
+- Le proposte AI vengono applicate al flusso solo dopo la validazione completa della risposta.
+
 ## 0.3.0
 
 - Nuovo tema scuro completo e interfaccia responsive rifinita.

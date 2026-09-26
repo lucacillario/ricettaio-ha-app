@@ -96,6 +96,69 @@ export const chat = (messages: ChatMessage[], recipeId?: string) =>
     body: JSON.stringify({ messages, recipe_id: recipeId ?? null }),
   });
 
+export async function chatStream(
+  messages: ChatMessage[],
+  recipeId: string | undefined,
+  onDelta: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<ChatResponse> {
+  const response = await fetch(`${API}/ai/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify({ messages, recipe_id: recipeId ?? null }),
+    signal,
+  });
+  if (!response.ok) {
+    let message = `Errore ${response.status}`;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      if (body.detail) message = body.detail;
+    } catch {
+      // Keep the generic HTTP error.
+    }
+    throw new ApiError(message, response.status);
+  }
+  if (!response.body) throw new ApiError("Streaming non supportato dal browser", 0);
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: ChatResponse | null = null;
+
+  const consumeEvent = (block: string) => {
+    let event = "message";
+    const data: string[] = [];
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+    }
+    if (data.length === 0) return;
+    const payload = JSON.parse(data.join("\n")) as Record<string, unknown>;
+    if (event === "delta" && typeof payload.text === "string") onDelta(payload.text);
+    if (event === "result") result = payload as unknown as ChatResponse;
+    if (event === "error") {
+      const detail = typeof payload.detail === "string" ? payload.detail : "Errore AI";
+      throw new ApiError(detail, 503);
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    buffer = buffer.replaceAll("\r\n", "\n");
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary >= 0) {
+      consumeEvent(buffer.slice(0, boundary));
+      buffer = buffer.slice(boundary + 2);
+      boundary = buffer.indexOf("\n\n");
+    }
+    if (done) break;
+  }
+  if (buffer.trim()) consumeEvent(buffer.trim());
+  if (!result) throw new ApiError("Stream AI terminato senza una risposta valida", 502);
+  return result;
+}
+
 export const createDraft = (prompt: string) =>
   request<RecipeInput>("ai/drafts", {
     method: "POST",

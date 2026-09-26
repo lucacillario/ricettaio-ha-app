@@ -43,15 +43,23 @@ describe("RicettAIo", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes("ai/chat/stream")) {
+          const result = JSON.stringify({
+            message: "Ciao! Sono RicettAIo.",
+            referenced_recipe_ids: [],
+            proposal: null,
+          });
+          return new Response(
+            `event: delta\ndata: {"text":"Ciao! "}\n\n`
+              + `event: delta\ndata: {"text":"Sono RicettAIo."}\n\n`
+              + `event: result\ndata: ${result}\n\n`
+              + "event: done\ndata: {}\n\n",
+            { status: 200, headers: { "Content-Type": "text/event-stream" } },
+          );
+        }
         const body = url.includes("categories")
           ? categories
-          : url.includes("ai/chat")
-            ? {
-                message: "Ciao! Sono RicettAIo.",
-                referenced_recipe_ids: [],
-                proposal: null,
-              }
-            : recipePage;
+          : recipePage;
         return new Response(JSON.stringify(body), {
           status: 200,
           headers: { "Content-Type": "application/json" },

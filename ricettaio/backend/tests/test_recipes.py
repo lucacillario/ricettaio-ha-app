@@ -21,6 +21,19 @@ async def test_health_and_seed_categories(client: httpx2.AsyncClient) -> None:
     assert health.json()["database"] == "ok"
     assert health.json()["ai_configured"] is True
 
+
+async def test_chat_stream_emits_delta_result_and_done(client: httpx2.AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/ai/chat/stream",
+        json={"messages": [{"role": "user", "content": "Ciao"}], "recipe_id": None},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: delta" in response.text
+    assert "event: result" in response.text
+    assert "event: done" in response.text
+
     categories = await client.get("/api/v1/categories")
     assert categories.status_code == 200
     assert {item["name"] for item in categories.json()} >= {"Antipasti", "Primi", "Dolci"}
