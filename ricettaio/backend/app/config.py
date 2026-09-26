@@ -37,6 +37,7 @@ class Settings:
     gemini_model: str = ""
     openrouter_api_key: str = ""
     openrouter_models: tuple[str, ...] = DEFAULT_OPENROUTER_MODELS
+    openrouter_strict_privacy: bool = True
     ai_provider: str = "openrouter"
     strict_ingress: bool = False
     trash_retention_days: int = 30
@@ -75,6 +76,13 @@ class Settings:
             openrouter_models=_as_list(
                 os.getenv("RICETTAIO_OPENROUTER_MODELS", options.get("openrouter_models")),
                 DEFAULT_OPENROUTER_MODELS,
+            ),
+            openrouter_strict_privacy=_as_bool(
+                os.getenv(
+                    "RICETTAIO_OPENROUTER_STRICT_PRIVACY",
+                    options.get("openrouter_strict_privacy"),
+                ),
+                True,
             ),
             ai_provider=os.getenv(
                 "RICETTAIO_AI_PROVIDER", options.get("ai_provider", "openrouter")

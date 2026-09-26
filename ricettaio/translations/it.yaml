@@ -8,6 +8,9 @@ configuration:
   openrouter_models:
     name: Modelli OpenRouter
     description: Modelli in ordine di priorità, separati da virgola; i successivi sono fallback.
+  openrouter_strict_privacy:
+    name: Privacy OpenRouter rigorosa
+    description: Richiede Zero Data Retention e vieta la raccolta dati; può escludere i modelli gratuiti.
   gemini_api_key:
     name: Chiave API Gemini
     description: Chiave dedicata della Gemini Developer API; non viene mostrata al frontend.

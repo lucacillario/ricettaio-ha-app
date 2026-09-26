@@ -8,6 +8,9 @@ configuration:
   openrouter_models:
     name: OpenRouter models
     description: Comma-separated models in priority order; later entries are fallbacks.
+  openrouter_strict_privacy:
+    name: Strict OpenRouter privacy
+    description: Requires Zero Data Retention and denies data collection; may exclude free models.
   gemini_api_key:
     name: Gemini API key
     description: Dedicated Gemini Developer API key; it is never exposed to the frontend.

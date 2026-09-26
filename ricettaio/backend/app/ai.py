@@ -284,6 +284,7 @@ class OpenRouterAiProvider(AiProvider):
         self,
         api_key: str,
         models: tuple[str, ...],
+        strict_privacy: bool = True,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         if not api_key:
@@ -292,6 +293,7 @@ class OpenRouterAiProvider(AiProvider):
             raise AiUnavailableError("Non è configurato alcun modello OpenRouter")
         self.api_key = api_key
         self.models = models
+        self.strict_privacy = strict_privacy
         self.client = client
 
     async def chat(self, messages: list[ChatMessage], recipes: list[Recipe]) -> ProviderChatResult:
@@ -361,10 +363,10 @@ CONVERSAZIONE:
             },
             "provider": {
                 "require_parameters": True,
-                "data_collection": "deny",
-                "zdr": True,
             },
         }
+        if self.strict_privacy:
+            payload["provider"].update({"data_collection": "deny", "zdr": True})
         try:
             response = await self._post(payload)
             if response.status_code >= 400:
@@ -473,7 +475,9 @@ class AiService:
             self._provider = FakeAiProvider()
         elif self.settings.ai_provider == "openrouter":
             self._provider = OpenRouterAiProvider(
-                self.settings.openrouter_api_key, self.settings.openrouter_models
+                self.settings.openrouter_api_key,
+                self.settings.openrouter_models,
+                self.settings.openrouter_strict_privacy,
             )
         elif self.settings.ai_provider == "gemini":
             self._provider = GeminiAiProvider(

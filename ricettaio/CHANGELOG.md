@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Resi opzionali i filtri privacy OpenRouter rigorosi per consentire l'uso dei modelli gratuiti durante i test.
+
 ## 0.2.0
 
 - Aggiunto OpenRouter come provider AI consigliato, mantenendo Gemini diretto opzionale.

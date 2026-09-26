@@ -63,6 +63,7 @@ Nella scheda **Configurazione** dell'app inserisci:
 ai_provider: "openrouter"
 openrouter_api_key: "LA_TUA_CHIAVE"
 openrouter_models: "deepseek/deepseek-v4.1-flash,google/gemini-3.8-flash,openai/gpt-5.2"
+openrouter_strict_privacy: true
 ai_enabled: true
 strict_ingress: true
 trash_retention_days: 30
@@ -71,6 +72,8 @@ trash_retention_days: 30
 I modelli sono provati nell'ordine indicato. Le richieste OpenRouter richiedono provider compatibili con JSON Schema, Zero Data Retention e nessuna raccolta dati. Salva e riavvia l'app. La chiave viene conservata nelle opzioni private e non deve essere aggiunta al repository.
 
 Per continuare a usare Gemini direttamente imposta `ai_provider: "gemini"` e configura `gemini_api_key` e `gemini_model`.
+
+Per testare modelli gratuiti imposta temporaneamente `openrouter_models: "openrouter/free"` e `openrouter_strict_privacy: false`: gli endpoint gratuiti potrebbero non supportare Zero Data Retention.
 
 ### Installazione locale alternativa
 

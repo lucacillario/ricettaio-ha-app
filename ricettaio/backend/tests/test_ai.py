@@ -178,7 +178,7 @@ async def test_openrouter_uses_fallbacks_structured_output_and_privacy() -> None
                 "google/gemini-3.8-flash",
                 "openai/gpt-5.2",
             ),
-            client,
+            client=client,
         )
         result = await provider.chat([ChatMessage(role="user", content="Cosa posso cucinare?")], [])
 
