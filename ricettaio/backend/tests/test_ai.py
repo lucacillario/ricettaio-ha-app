@@ -17,6 +17,7 @@ from app.ai import (
     gemini_response_schema,
     parse_gemini_response,
     sanitize_gemini_schema,
+    sanitize_openrouter_schema,
 )
 from app.domain import ChatMessage, RecipeCreate
 
@@ -90,6 +91,16 @@ def test_gemini_response_schemas_compatible_with_genai_sdk() -> None:
     assert validated_recipe is not None
     assert isinstance(validated_recipe, types.Schema)
     assert validated_recipe.additional_properties is None
+
+
+def test_openrouter_schema_removes_formats_but_keeps_validation_constraints() -> None:
+    schema = sanitize_openrouter_schema(AiAnswer.model_json_schema())
+    serialized = json.dumps(schema)
+
+    assert '"format"' not in serialized
+    source_url = schema["$defs"]["RecipeSource"]["properties"]["url"]["anyOf"][0]
+    assert source_url["minLength"] == 1
+    assert source_url["maxLength"] == 2083
 
 
 def test_parse_gemini_response_supports_dict_and_fenced_markdown() -> None:
@@ -199,83 +210,19 @@ async def test_openrouter_uses_fallbacks_structured_output_and_privacy() -> None
 
 
 @pytest.mark.anyio
-async def test_openrouter_free_uses_compatible_json_mode() -> None:
-    captured: dict[str, Any] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured.update(json.loads(request.content))
-        return httpx.Response(
-            200,
-            json={
-                "choices": [
-                    {
-                        "message": {
-                            "content": "```json\n"
-                            '{"message":"Funziona","action":"none"}'
-                            "\n```"
-                        }
-                    }
-                ]
-            },
-        )
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        provider = OpenRouterAiProvider(
-            "sk-or-v1-test",
-            ("openrouter/free",),
-            strict_privacy=False,
-            client=client,
-        )
-        result = await provider.chat([ChatMessage(role="user", content="Ciao")], [])
-
-    assert result.message == "Funziona"
-    assert captured["models"] == ["google/gemma-4-26b-a4b-it:free"]
-    assert captured["response_format"] == {"type": "json_object"}
-    assert captured["provider"] == {"require_parameters": True}
-    assert "JSON Schema" in captured["messages"][0]["content"]
-
-
-@pytest.mark.anyio
 async def test_openrouter_reports_embedded_api_error_instead_of_key_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
-            json={"error": {"message": "No compatible free endpoints available"}},
+            json={"error": {"message": "Upstream provider unavailable"}},
         )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         provider = OpenRouterAiProvider(
             "sk-or-v1-test",
-            ("openrouter/free",),
+            ("deepseek/deepseek-v4.1-flash",),
             strict_privacy=False,
             client=client,
         )
-        with pytest.raises(AiUnavailableError, match="No compatible free endpoints"):
+        with pytest.raises(AiUnavailableError, match="Upstream provider unavailable"):
             await provider.chat([ChatMessage(role="user", content="Ciao")], [])
-
-
-@pytest.mark.anyio
-async def test_openrouter_free_retries_invalid_json_once() -> None:
-    calls = 0
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal calls
-        calls += 1
-        content = (
-            "User Safety: safe"
-            if calls == 1
-            else '{"message":"Risposta recuperata","action":"none"}'
-        )
-        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        provider = OpenRouterAiProvider(
-            "sk-or-v1-test",
-            ("openrouter/free",),
-            strict_privacy=False,
-            client=client,
-        )
-        result = await provider.chat([ChatMessage(role="user", content="Ciao")], [])
-
-    assert calls == 2
-    assert result.message == "Risposta recuperata"

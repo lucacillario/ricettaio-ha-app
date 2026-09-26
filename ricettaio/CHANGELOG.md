@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.4
+
+- Rimossa tutta la gestione speciale dei modelli OpenRouter gratuiti.
+- Resi gli schemi compatibili con InferenceNet/XGrammar senza indebolire la validazione locale.
+
 ## 0.2.3
 
 - Reso deterministico `openrouter/free` usando Gemma 4 26B A4B, gratuito e compatibile con output JSON.

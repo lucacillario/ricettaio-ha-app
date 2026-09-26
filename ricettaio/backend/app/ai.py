@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Literal
 
 import httpx
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from .config import Settings
 from .domain import ChatMessage, ChatResponse, Recipe, RecipeCreate, RecipeSource
@@ -58,6 +58,23 @@ def sanitize_gemini_schema(schema: Any) -> Any:
 
 def gemini_response_schema(model_cls: type[BaseModel]) -> dict[str, Any]:
     return sanitize_gemini_schema(model_cls.model_json_schema())
+
+
+def sanitize_openrouter_schema(schema: Any) -> Any:
+    """Remove format annotations that some OpenRouter grammar engines cannot compile.
+
+    Full validation, including URL, UUID and datetime formats, is still performed by
+    Pydantic after the response is received.
+    """
+    if isinstance(schema, dict):
+        return {
+            key: sanitize_openrouter_schema(value)
+            for key, value in schema.items()
+            if key != "format"
+        }
+    if isinstance(schema, list):
+        return [sanitize_openrouter_schema(item) for item in schema]
+    return schema
 
 
 def parse_gemini_response[TModel: BaseModel](response: Any, model_cls: type[TModel]) -> TModel:
@@ -279,7 +296,6 @@ CONVERSAZIONE:
 
 class OpenRouterAiProvider(AiProvider):
     endpoint = "https://openrouter.ai/api/v1/chat/completions"
-    free_test_model = "google/gemma-4-26b-a4b-it:free"
 
     def __init__(
         self,
@@ -350,35 +366,18 @@ CONVERSAZIONE:
         schema_name: str,
         temperature: float,
     ) -> TModel:
-        schema = model_cls.model_json_schema()
-        request_models = (
-            (self.free_test_model,) if self.models == ("openrouter/free",) else self.models
-        )
-        free_compatibility_mode = all(model.endswith(":free") for model in request_models)
-        request_prompt = prompt
-        if free_compatibility_mode:
-            request_prompt = (
-                f"{prompt}\n\nRestituisci esclusivamente un oggetto JSON valido conforme "
-                "al seguente JSON Schema:\n"
-                f"{json.dumps(schema, ensure_ascii=False)}"
-            )
-
         payload: dict[str, Any] = {
-            "models": list(request_models),
-            "messages": [{"role": "user", "content": request_prompt}],
+            "models": list(self.models),
+            "messages": [{"role": "user", "content": prompt}],
             "temperature": temperature,
-            "response_format": (
-                {"type": "json_object"}
-                if free_compatibility_mode
-                else {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": schema_name,
-                        "strict": True,
-                        "schema": schema,
-                    },
-                }
-            ),
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "strict": True,
+                    "schema": sanitize_openrouter_schema(model_cls.model_json_schema()),
+                },
+            },
         }
         provider_preferences: dict[str, Any] = {"require_parameters": True}
         if self.strict_privacy:
@@ -386,33 +385,16 @@ CONVERSAZIONE:
         if provider_preferences:
             payload["provider"] = provider_preferences
         try:
-            attempts = 2 if free_compatibility_mode else 1
-            for attempt in range(attempts):
-                response = await self._post(payload)
-                body = self._response_body(response)
-                if response.status_code >= 400:
-                    message = self._response_error_message(body) or response.text
-                    raise RuntimeError(f"HTTP {response.status_code}: {message[:600]}")
+            response = await self._post(payload)
+            body = self._response_body(response)
+            if response.status_code >= 400:
+                message = self._response_error_message(body) or response.text
+                raise RuntimeError(f"HTTP {response.status_code}: {message[:600]}")
 
-                embedded_error = self._response_error_message(body)
-                if embedded_error:
-                    raise RuntimeError(f"API: {embedded_error[:600]}")
-                content = self._response_content(body)
-                try:
-                    return model_cls.model_validate_json(content)
-                except ValidationError:
-                    if attempt + 1 >= attempts:
-                        raise
-                    payload["messages"] = [
-                        {
-                            "role": "user",
-                            "content": (
-                                f"{request_prompt}\n\nIl tentativo precedente non era JSON valido "
-                                f"({content[:500]!r}). Riprova: emetti soltanto il JSON richiesto."
-                            ),
-                        }
-                    ]
-            raise RuntimeError("OpenRouter non ha prodotto una risposta valida")
+            embedded_error = self._response_error_message(body)
+            if embedded_error:
+                raise RuntimeError(f"API: {embedded_error[:600]}")
+            return model_cls.model_validate_json(self._response_content(body))
         except AiUnavailableError:
             raise
         except Exception as error:

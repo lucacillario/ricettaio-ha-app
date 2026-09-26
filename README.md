@@ -73,8 +73,6 @@ I modelli sono provati nell'ordine indicato. Le richieste OpenRouter richiedono 
 
 Per continuare a usare Gemini direttamente imposta `ai_provider: "gemini"` e configura `gemini_api_key` e `gemini_model`.
 
-Per testare modelli gratuiti imposta temporaneamente `openrouter_models: "openrouter/free"` e `openrouter_strict_privacy: false`: gli endpoint gratuiti potrebbero non supportare Zero Data Retention.
-
 ### Installazione locale alternativa
 
 1. copia la directory `ricettaio/` nella directory `/addons` dell'host Home Assistant;

@@ -13,8 +13,6 @@ L'archivio manuale funziona senza servizi esterni. La configurazione consigliata
 
 I modelli sono tentati in ordine. OpenRouter usa soltanto endpoint compatibili con i parametri richiesti, senza raccolta dati e con Zero Data Retention. Gemini diretto resta disponibile impostando `ai_provider` su `gemini`.
 
-Per test gratuiti si può usare `openrouter/free` con `openrouter_strict_privacy` disattivato. In questa modalità OpenRouter può usare endpoint che non garantiscono Zero Data Retention: non inviare ricette o informazioni sensibili.
-
 La chiave viene salvata nelle opzioni dell'app e può essere inclusa nei backup Home Assistant. Non viene mai inviata al frontend né scritta nei log applicativi.
 
 ## Dati e backup
