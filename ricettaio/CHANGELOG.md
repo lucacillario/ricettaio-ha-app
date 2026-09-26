@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+- Reso deterministico `openrouter/free` usando Gemma 4 26B A4B, gratuito e compatibile con output JSON.
+- Aggiunto un secondo tentativo automatico quando un modello gratuito restituisce testo non JSON.
+
 ## 0.2.2
 
 - Corretto il `KeyError: 'choices'` quando OpenRouter restituisce un errore nel body.

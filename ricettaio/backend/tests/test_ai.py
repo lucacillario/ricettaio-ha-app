@@ -229,8 +229,9 @@ async def test_openrouter_free_uses_compatible_json_mode() -> None:
         result = await provider.chat([ChatMessage(role="user", content="Ciao")], [])
 
     assert result.message == "Funziona"
+    assert captured["models"] == ["google/gemma-4-26b-a4b-it:free"]
     assert captured["response_format"] == {"type": "json_object"}
-    assert "provider" not in captured
+    assert captured["provider"] == {"require_parameters": True}
     assert "JSON Schema" in captured["messages"][0]["content"]
 
 
@@ -251,3 +252,30 @@ async def test_openrouter_reports_embedded_api_error_instead_of_key_error() -> N
         )
         with pytest.raises(AiUnavailableError, match="No compatible free endpoints"):
             await provider.chat([ChatMessage(role="user", content="Ciao")], [])
+
+
+@pytest.mark.anyio
+async def test_openrouter_free_retries_invalid_json_once() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        content = (
+            "User Safety: safe"
+            if calls == 1
+            else '{"message":"Risposta recuperata","action":"none"}'
+        )
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OpenRouterAiProvider(
+            "sk-or-v1-test",
+            ("openrouter/free",),
+            strict_privacy=False,
+            client=client,
+        )
+        result = await provider.chat([ChatMessage(role="user", content="Ciao")], [])
+
+    assert calls == 2
+    assert result.message == "Risposta recuperata"

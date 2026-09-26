@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Literal
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from .config import Settings
 from .domain import ChatMessage, ChatResponse, Recipe, RecipeCreate, RecipeSource
@@ -279,6 +279,7 @@ CONVERSAZIONE:
 
 class OpenRouterAiProvider(AiProvider):
     endpoint = "https://openrouter.ai/api/v1/chat/completions"
+    free_test_model = "google/gemma-4-26b-a4b-it:free"
 
     def __init__(
         self,
@@ -350,9 +351,12 @@ CONVERSAZIONE:
         temperature: float,
     ) -> TModel:
         schema = model_cls.model_json_schema()
-        free_router = self.models == ("openrouter/free",)
+        request_models = (
+            (self.free_test_model,) if self.models == ("openrouter/free",) else self.models
+        )
+        free_compatibility_mode = all(model.endswith(":free") for model in request_models)
         request_prompt = prompt
-        if free_router:
+        if free_compatibility_mode:
             request_prompt = (
                 f"{prompt}\n\nRestituisci esclusivamente un oggetto JSON valido conforme "
                 "al seguente JSON Schema:\n"
@@ -360,12 +364,12 @@ CONVERSAZIONE:
             )
 
         payload: dict[str, Any] = {
-            "models": list(self.models),
+            "models": list(request_models),
             "messages": [{"role": "user", "content": request_prompt}],
             "temperature": temperature,
             "response_format": (
                 {"type": "json_object"}
-                if free_router
+                if free_compatibility_mode
                 else {
                     "type": "json_schema",
                     "json_schema": {
@@ -376,39 +380,39 @@ CONVERSAZIONE:
                 }
             ),
         }
-        provider_preferences: dict[str, Any] = {}
-        if not free_router:
-            provider_preferences["require_parameters"] = True
+        provider_preferences: dict[str, Any] = {"require_parameters": True}
         if self.strict_privacy:
             provider_preferences.update({"data_collection": "deny", "zdr": True})
         if provider_preferences:
             payload["provider"] = provider_preferences
         try:
-            response = await self._post(payload)
-            body = self._response_body(response)
-            if response.status_code >= 400:
-                message = self._response_error_message(body) or response.text
-                raise RuntimeError(f"HTTP {response.status_code}: {message[:600]}")
+            attempts = 2 if free_compatibility_mode else 1
+            for attempt in range(attempts):
+                response = await self._post(payload)
+                body = self._response_body(response)
+                if response.status_code >= 400:
+                    message = self._response_error_message(body) or response.text
+                    raise RuntimeError(f"HTTP {response.status_code}: {message[:600]}")
 
-            embedded_error = self._response_error_message(body)
-            if embedded_error:
-                raise RuntimeError(f"API: {embedded_error[:600]}")
-            choices = body.get("choices") if isinstance(body, dict) else None
-            if not isinstance(choices, list) or not choices:
-                raise RuntimeError("Risposta OpenRouter priva di choices")
-            first_choice = choices[0]
-            message = first_choice.get("message") if isinstance(first_choice, dict) else None
-            content = message.get("content") if isinstance(message, dict) else None
-            if isinstance(content, list):
-                content = "".join(
-                    str(item.get("text", "")) for item in content if isinstance(item, dict)
-                )
-            if not isinstance(content, str) or not content.strip():
-                raise RuntimeError("Risposta OpenRouter priva di contenuto")
-            fenced = re.match(r"^```(?:json)?\s*([\s\S]*?)\s*```$", content.strip())
-            if fenced:
-                content = fenced.group(1).strip()
-            return model_cls.model_validate_json(content)
+                embedded_error = self._response_error_message(body)
+                if embedded_error:
+                    raise RuntimeError(f"API: {embedded_error[:600]}")
+                content = self._response_content(body)
+                try:
+                    return model_cls.model_validate_json(content)
+                except ValidationError:
+                    if attempt + 1 >= attempts:
+                        raise
+                    payload["messages"] = [
+                        {
+                            "role": "user",
+                            "content": (
+                                f"{request_prompt}\n\nIl tentativo precedente non era JSON valido "
+                                f"({content[:500]!r}). Riprova: emetti soltanto il JSON richiesto."
+                            ),
+                        }
+                    ]
+            raise RuntimeError("OpenRouter non ha prodotto una risposta valida")
         except AiUnavailableError:
             raise
         except Exception as error:
@@ -432,6 +436,23 @@ CONVERSAZIONE:
         if error:
             return str(error)
         return None
+
+    @staticmethod
+    def _response_content(body: Any) -> str:
+        choices = body.get("choices") if isinstance(body, dict) else None
+        if not isinstance(choices, list) or not choices:
+            raise RuntimeError("Risposta OpenRouter priva di choices")
+        first_choice = choices[0]
+        message = first_choice.get("message") if isinstance(first_choice, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list):
+            content = "".join(
+                str(item.get("text", "")) for item in content if isinstance(item, dict)
+            )
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError("Risposta OpenRouter priva di contenuto")
+        fenced = re.match(r"^```(?:json)?\s*([\s\S]*?)\s*```$", content.strip())
+        return fenced.group(1).strip() if fenced else content.strip()
 
     async def _post(self, payload: dict[str, Any]) -> httpx.Response:
         headers = {
