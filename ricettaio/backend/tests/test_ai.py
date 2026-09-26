@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from app.ai import (
     AiAnswer,
+    AiUnavailableError,
     OpenRouterAiProvider,
     gemini_response_schema,
     parse_gemini_response,
@@ -195,3 +196,58 @@ async def test_openrouter_uses_fallbacks_structured_output_and_privacy() -> None
         "data_collection": "deny",
         "zdr": True,
     }
+
+
+@pytest.mark.anyio
+async def test_openrouter_free_uses_compatible_json_mode() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": "```json\n"
+                            '{"message":"Funziona","action":"none"}'
+                            "\n```"
+                        }
+                    }
+                ]
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OpenRouterAiProvider(
+            "sk-or-v1-test",
+            ("openrouter/free",),
+            strict_privacy=False,
+            client=client,
+        )
+        result = await provider.chat([ChatMessage(role="user", content="Ciao")], [])
+
+    assert result.message == "Funziona"
+    assert captured["response_format"] == {"type": "json_object"}
+    assert "provider" not in captured
+    assert "JSON Schema" in captured["messages"][0]["content"]
+
+
+@pytest.mark.anyio
+async def test_openrouter_reports_embedded_api_error_instead_of_key_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"error": {"message": "No compatible free endpoints available"}},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = OpenRouterAiProvider(
+            "sk-or-v1-test",
+            ("openrouter/free",),
+            strict_privacy=False,
+            client=client,
+        )
+        with pytest.raises(AiUnavailableError, match="No compatible free endpoints"):
+            await provider.chat([ChatMessage(role="user", content="Ciao")], [])

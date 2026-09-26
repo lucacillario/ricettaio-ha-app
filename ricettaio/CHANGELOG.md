@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+- Corretto il `KeyError: 'choices'` quando OpenRouter restituisce un errore nel body.
+- Aggiunta una modalità JSON compatibile per il router di test `openrouter/free`.
+
 ## 0.2.1
 
 - Resi opzionali i filtri privacy OpenRouter rigorosi per consentire l'uso dei modelli gratuiti durante i test.

@@ -349,44 +349,89 @@ CONVERSAZIONE:
         schema_name: str,
         temperature: float,
     ) -> TModel:
+        schema = model_cls.model_json_schema()
+        free_router = self.models == ("openrouter/free",)
+        request_prompt = prompt
+        if free_router:
+            request_prompt = (
+                f"{prompt}\n\nRestituisci esclusivamente un oggetto JSON valido conforme "
+                "al seguente JSON Schema:\n"
+                f"{json.dumps(schema, ensure_ascii=False)}"
+            )
+
         payload: dict[str, Any] = {
             "models": list(self.models),
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [{"role": "user", "content": request_prompt}],
             "temperature": temperature,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": schema_name,
-                    "strict": True,
-                    "schema": model_cls.model_json_schema(),
-                },
-            },
-            "provider": {
-                "require_parameters": True,
-            },
+            "response_format": (
+                {"type": "json_object"}
+                if free_router
+                else {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": schema_name,
+                        "strict": True,
+                        "schema": schema,
+                    },
+                }
+            ),
         }
+        provider_preferences: dict[str, Any] = {}
+        if not free_router:
+            provider_preferences["require_parameters"] = True
         if self.strict_privacy:
-            payload["provider"].update({"data_collection": "deny", "zdr": True})
+            provider_preferences.update({"data_collection": "deny", "zdr": True})
+        if provider_preferences:
+            payload["provider"] = provider_preferences
         try:
             response = await self._post(payload)
+            body = self._response_body(response)
             if response.status_code >= 400:
-                try:
-                    error_body = response.json()
-                    message = error_body.get("error", {}).get("message") or response.text
-                except (ValueError, AttributeError):
-                    message = response.text
+                message = self._response_error_message(body) or response.text
                 raise RuntimeError(f"HTTP {response.status_code}: {message[:600]}")
-            body = response.json()
-            content = body["choices"][0]["message"]["content"]
+
+            embedded_error = self._response_error_message(body)
+            if embedded_error:
+                raise RuntimeError(f"API: {embedded_error[:600]}")
+            choices = body.get("choices") if isinstance(body, dict) else None
+            if not isinstance(choices, list) or not choices:
+                raise RuntimeError("Risposta OpenRouter priva di choices")
+            first_choice = choices[0]
+            message = first_choice.get("message") if isinstance(first_choice, dict) else None
+            content = message.get("content") if isinstance(message, dict) else None
             if isinstance(content, list):
                 content = "".join(
                     str(item.get("text", "")) for item in content if isinstance(item, dict)
                 )
+            if not isinstance(content, str) or not content.strip():
+                raise RuntimeError("Risposta OpenRouter priva di contenuto")
+            fenced = re.match(r"^```(?:json)?\s*([\s\S]*?)\s*```$", content.strip())
+            if fenced:
+                content = fenced.group(1).strip()
             return model_cls.model_validate_json(content)
         except AiUnavailableError:
             raise
         except Exception as error:
             raise openrouter_error(error) from error
+
+    @staticmethod
+    def _response_body(response: httpx.Response) -> Any:
+        try:
+            return response.json()
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _response_error_message(body: Any) -> str | None:
+        if not isinstance(body, dict):
+            return None
+        error = body.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            return str(message or error)
+        if error:
+            return str(error)
+        return None
 
     async def _post(self, payload: dict[str, Any]) -> httpx.Response:
         headers = {
